@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>비트코인 30일 추세 · 매수 판단</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh; color: #e8e8e8; padding: 24px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 8px; font-size: 1.6rem; font-weight: 600; }
+    .subtitle { text-align: center; color: #8892a6; margin-bottom: 24px; font-size: 0.9rem; }
+
+    .chart-wrap { background: rgba(255,255,255,0.06); border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); }
+    .chart-wrap canvas { max-height: 320px; }
+
+    .price-label { text-align: center; font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px; }
+    .price-now { text-align: center; font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+    .price-now.up { color: #22c55e; } .price-now.down { color: #ef4444; }
+    .price-change { text-align: center; font-size: 0.95rem; color: #94a3b8; margin-bottom: 20px; }
+    .price-usd { font-size: 0.95rem; color: #94a3b8; margin-top: 2px; }
+
+    .verdict { border-radius: 16px; padding: 24px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); }
+    .verdict.buy { background: linear-gradient(135deg,rgba(34,197,94,0.2),rgba(34,197,94,0.05)); border-color: rgba(34,197,94,0.4); }
+    .verdict.avoid { background: linear-gradient(135deg,rgba(239,68,68,0.2),rgba(239,68,68,0.05)); border-color: rgba(239,68,68,0.4); }
+    .verdict.neutral { background: linear-gradient(135deg,rgba(234,179,8,0.2),rgba(234,179,8,0.05)); border-color: rgba(234,179,8,0.4); }
+    .verdict h2 { font-size: 1.2rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .verdict.buy h2 { color: #22c55e; } .verdict.avoid h2 { color: #ef4444; } .verdict.neutral h2 { color: #eab308; }
+    .verdict p { color: #cbd5e1; line-height: 1.6; font-size: 0.95rem; }
+
+    .stats { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-bottom: 20px; }
+    .stat { background: rgba(255,255,255,0.06); border-radius: 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.08); text-align: center; }
+    .stat label { font-size: 0.8rem; color: #94a3b8; display: block; margin-bottom: 4px; }
+    .stat span { font-size: 1.1rem; font-weight: 600; }
+
+    .loading { text-align: center; padding: 40px; color: #94a3b8; }
+    .error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 12px; padding: 16px; color: #fca5a5; margin-bottom: 16px; }
+    .footer { text-align: center; font-size: 0.8rem; color: #64748b; margin-top: 24px; }
+
+    .prediction { background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.35); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
+    .prediction h2 { font-size: 1.15rem; margin-bottom: 16px; color: #a5b4fc; }
+    .prediction-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .prediction-row:last-of-type { border-bottom: none; }
+    .prediction-row label { color: #94a3b8; font-size: 0.9rem; }
+    .prediction-row span { font-weight: 600; }
+    .prediction-row span.up { color: #22c55e; } .prediction-row span.down { color: #ef4444; }
+    .prediction-narrative { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); color: #cbd5e1; line-height: 1.65; font-size: 0.95rem; }
+
+    .possibility { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.08); }
+    .possibility h3 { font-size: 1rem; margin-bottom: 12px; color: #a5b4fc; }
+    .possibility-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; }
+    .possibility-row .label { color: #94a3b8; }
+    .possibility-row .value { font-weight: 600; }
+    .worst-case { color: #f87171; }
+
+    /* ===== MARKET MAP ===== */
+    .market-wrap { background: rgba(255,255,255,0.04); border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); }
+    .market-wrap > h3 { font-size: 1.1rem; margin-bottom: 14px; color: #a5b4fc; }
+
+    .sector-tabs-scroll { overflow-x: auto; margin-bottom: 14px; scrollbar-width: thin; scrollbar-color: rgba(165,180,252,0.3) transparent; }
+    .sector-tabs-scroll::-webkit-scrollbar { height: 4px; }
+    .sector-tabs-scroll::-webkit-scrollbar-thumb { background: rgba(165,180,252,0.3); border-radius: 4px; }
+    .sector-tabs { display: flex; gap: 6px; white-space: nowrap; min-width: max-content; padding: 2px 0 6px; }
+    .stab { padding: 5px 12px; border-radius: 20px; font-size: 0.76rem; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); color: #94a3b8; transition: all 0.15s; user-select: none; }
+    .stab:hover { background: rgba(165,180,252,0.15); color: #c7d2fe; border-color: rgba(165,180,252,0.3); }
+    .stab.active { background: rgba(165,180,252,0.22); color: #a5b4fc; border-color: rgba(165,180,252,0.5); }
+
+    .market-summary { display: flex; gap: 12px; margin-bottom: 14px; font-size: 0.82rem; flex-wrap: wrap; align-items: center; }
+    .market-summary .ms-total { color: #94a3b8; }
+    .market-summary .ms-up { color: #22c55e; font-weight: 600; }
+    .market-summary .ms-down { color: #ef4444; font-weight: 600; }
+    .market-summary .ms-avg { font-weight: 600; }
+    .market-summary .ms-avg.up { color: #22c55e; }
+    .market-summary .ms-avg.down { color: #ef4444; }
+
+    /* ── GROUPED TREEMAP ── */
+    #groupedTreemap {
+      position: relative;
+      width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.2);
+    }
+
+    /* Sector region */
+    .sector-region {
+      position: absolute;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .sector-region-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      z-index: 3;
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .sector-region-header .sr-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .sector-region-header .sr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .sector-region-header .sr-avg { font-size: 0.65rem; flex-shrink: 0; }
+    .sector-region-header .sr-avg.up { color: #4ade80; }
+    .sector-region-header .sr-avg.down { color: #f87171; }
+
+    /* Coin block inside region */
+    .tm-block {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 3px;
+      font-weight: 600;
+      transition: filter 0.12s, transform 0.12s;
+      border: 1px solid rgba(0,0,0,0.2);
+      cursor: default;
+      overflow: hidden;
+    }
+    .tm-block:hover { filter: brightness(1.25); transform: scale(1.03); z-index: 10; }
+    .tm-block.up   { background: rgba(34,197,94,0.55);  color: #dcfce7; }
+    .tm-block.down { background: rgba(239,68,68,0.55);  color: #fee2e2; }
+    .tm-block.flat { background: rgba(148,163,184,0.32); color: #e2e8f0; }
+    .tm-block .tb-kr  { opacity: 0.85; word-break: keep-all; line-height: 1.15; text-align: center; }
+    .tm-block .tb-sym { font-weight: 700; }
+    .tm-block .tb-pct { opacity: 0.9; }
+
+    /* Single sector treemap */
+    .single-treemap { position: relative; width: 100%; border-radius: 10px; overflow: hidden; }
+    .no-data { text-align: center; padding: 30px; color: #94a3b8; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>비트코인 30일 추세</h1>
+  <p class="subtitle">차트 기반 추세 분석 · 매수 여부 참고용</p>
+
+  <div id="loading" class="loading">차트 데이터 불러오는 중…</div>
+  <div id="error" class="error" style="display:none;"></div>
+
+  <div id="content" style="display:none;">
+    <div class="price-label">현재 가격</div>
+    <div class="price-now" id="priceNow">-</div>
+    <div class="price-usd" id="priceNowUsd" style="text-align:center;margin-bottom:4px;"></div>
+    <div class="price-change" id="priceChange"></div>
+
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+
+    <div class="stats">
+      <div class="stat"><label>30일 최고가</label><span id="statHigh">-</span><div class="price-usd" id="statHighUsd"></div></div>
+      <div class="stat"><label>30일 최저가</label><span id="statLow">-</span><div class="price-usd" id="statLowUsd"></div></div>
+    </div>
+
+    <div class="possibility">
+      <h3>상승·하락 가능성 · 최대 하락 구간</h3>
+      <div class="possibility-row"><span class="label">상승 가능성 (1~2주)</span><span class="value" id="upPossibility">-</span></div>
+      <div class="possibility-row"><span class="label">하락 가능성 (1~2주)</span><span class="value" id="downPossibility">-</span></div>
+      <div class="possibility-row"><span class="label">변동성 기준 최대 하락 예상</span><span class="value worst-case" id="worstCase">-</span></div>
+    </div>
+
+    <div class="verdict" id="verdict">
+      <h2 id="verdictTitle">판단 중</h2>
+      <p id="verdictText"></p>
+    </div>
+
+    <div class="prediction">
+      <h2>앞으로 흐름 예측 (참고용)</h2>
+      <div class="prediction-row"><label>현재 가격</label><span id="predCurrent">-</span></div>
+      <div class="prediction-row"><label>1주 후 예상 구간</label><span id="pred7">-</span></div>
+      <div class="prediction-row"><label>2주 후 예상 구간</label><span id="pred14">-</span></div>
+      <div class="prediction-row"><label>최대 하락 가능 (참고)</label><span id="predWorst">-</span></div>
+      <div class="prediction-row"><label>단기 전망</label><span id="predDirection">-</span></div>
+      <p class="prediction-narrative" id="predNarrative"></p>
+    </div>
+
+    <div class="market-wrap">
+      <h3>전체 코인 등락률 (섹터별)</h3>
+      <div id="marketLoading" class="loading" style="padding:20px;">코인 시세 불러오는 중…</div>
+      <div id="marketBody" style="display:none;">
+        <div class="sector-tabs-scroll"><div class="sector-tabs" id="sectorTabs"></div></div>
+        <div class="market-summary" id="marketSummary"></div>
+        <div id="marketContent"></div>
+      </div>
+    </div>
+  </div>
+  <p class="footer">참고용이며 투자 책임은 본인에게 있습니다. Upbit API 데이터 사용.</p>
+</div>
+
+<script>
+(function(){
+
+/* ──────────────────────────────────────
+   SECTOR DEFINITIONS
+────────────────────────────────────── */
+var SECTORS = [
+  { id:'전체',    label:'전체',              color:'#a5b4fc', symbols:null },
+  { id:'L1',      label:'레이어 1',          color:'#6366f1', symbols:['SOL','ADA','SUI','ETH','TRX','XRP','SEI','APT','NEAR','ALGO','DOT','BCH','TON','INJ','HBAR','ZETA','CKB'] },
+  { id:'L2',      label:'레이어 2',          color:'#8b5cf6', symbols:['MATIC','METIS','MNT','ARB','OP','STRK','OMG','AVAX','SNX'] },
+  { id:'MEME',    label:'밈코인',            color:'#ec4899', symbols:['DOGE','SHIB','PEPE','FLOKI','BONK','POPCAT'] },
+  { id:'DEFI',    label:'DeFi',              color:'#06b6d4', symbols:['LINK','AAVE','UNI','INJ','PENDLE','SUI','1INCH','JUP','KAVA','ANKR','ZRX','STX','JST','KNC'] },
+  { id:'RWA',     label:'RWA',               color:'#f59e0b', symbols:['ONDO','CTC','LINK','SNX','OM','HIFI','AVAX'] },
+  { id:'DEPIN',   label:'DePIN',             color:'#84cc16', symbols:['RNDR','THETA','GLM','SC','ANKR','STORJ','IOTA','IOTX'] },
+  { id:'AI',      label:'AI',                color:'#a78bfa', symbols:['WLD','FET','RNDR','IQ','GRT','ARKM','NMR','CTXC','RLC'] },
+  { id:'OLD',     label:'구코인',            color:'#94a3b8', symbols:['ADA','XRP','BCH','XLM','SNT','QTUM'] },
+  { id:'BTCFORK', label:'BTC 계열',          color:'#f97316', symbols:['BTC','BCH','BTG','XEC'] },
+  { id:'ETHL2',   label:'ETH L2',            color:'#818cf8', symbols:['ARB','OP','TAIKO'] },
+  { id:'WEB3',    label:'Web 3.0',           color:'#2dd4bf', symbols:['STORJ','BAT','FIL','GLM','HIVE','SC','STEEM','CVC','SNT','THETA','FLOW','KAVA','GRT','BTT','XEM'] },
+  { id:'DID',     label:'DID',               color:'#e879f9', symbols:['WLD','CVC','ENS','ID','MED','META','ICX'] },
+  { id:'CEX',     label:'CEX 토큰',          color:'#60a5fa', symbols:['BNB','CRO','OKB','BGB','KCS'] },
+  { id:'KOREA',   label:'국내',              color:'#f472b6', symbols:['MBL','WEMIX','BORA','MLK','MED','ICX','DKA','AHT','META','AQT','KOK'] },
+  { id:'CHINA',   label:'중국',              color:'#fb7185', symbols:['NEO','QTUM','TRX','BCH','JST','ONT','GAS','BTT','VET','QKC','EOS'] },
+  { id:'SOL_ECO', label:'솔라나 생태계',     color:'#a3e635', symbols:['JUP','BONK','POPCAT','SRM','LINK','GRT','CVC'] },
+  { id:'ETH_ECO', label:'이더리움 생태계',   color:'#7dd3fc', symbols:['MNT','SHIB','WLD','ARB','ENS','ONDO'] },
+];
+
+var allTickers = {};
+var currentSector = '전체';
+
+/* ──────────────────────────────────────
+   TREEMAP ALGORITHM
+────────────────────────────────────── */
+function squarify(items, x, y, w, h, horiz) {
+  if (!items.length) return;
+  if (items.length === 1) { items[0].rect = {x,y,w,h}; return; }
+  var total = items.reduce(function(s,i){ return s+i.weight; }, 0);
+  var bestK = 1, bestScore = 1e9;
+  for (var k = 1; k < items.length; k++) {
+    var sumL = items.slice(0,k).reduce(function(s,i){ return s+i.weight; }, 0);
+    var r = sumL / total;
+    var wL = horiz ? w*r : w, hL = horiz ? h : h*r;
+    var wR = horiz ? w*(1-r) : w, hR = horiz ? h : h*(1-r);
+    var sc = (wL>0&&hL>0 ? Math.max(wL/hL,hL/wL) : 10) + (wR>0&&hR>0 ? Math.max(wR/hR,hR/wR) : 10);
+    if (sc < bestScore) { bestScore = sc; bestK = k; }
+  }
+  var ratio = items.slice(0,bestK).reduce(function(s,i){ return s+i.weight; },0) / total;
+  if (horiz) {
+    squarify(items.slice(0,bestK), x, y, w*ratio, h, false);
+    squarify(items.slice(bestK), x+w*ratio, y, w*(1-ratio), h, false);
+  } else {
+    squarify(items.slice(0,bestK), x, y, w, h*ratio, true);
+    squarify(items.slice(bestK), x, y+h*ratio, w, h*(1-ratio), true);
+  }
+}
+
+/* ──────────────────────────────────────
+   GROUPED TREEMAP (전체)
+   Step 1: lay out sector regions via treemap
+   Step 2: inside each region, lay out coins via treemap
+────────────────────────────────────── */
+function renderGroupedTreemap() {
+  var container = document.getElementById('marketContent');
+  container.innerHTML = '';
+
+  // Build sector items (weight = total abs change of member coins)
+  var sectorItems = [];
+  SECTORS.forEach(function(sector) {
+    if (sector.id === '전체' || !sector.symbols) return;
+    var coins = sector.symbols.map(function(s){ return allTickers[s]; }).filter(Boolean);
+    if (!coins.length) return;
+    var totalWeight = coins.reduce(function(s,c){ return s + Math.abs(c.signed_change_rate||0)*100 + 0.5; }, 0);
+    // minimum weight so small sectors are still visible
+    sectorItems.push({
+      sector: sector,
+      coins: coins,
+      weight: Math.max(totalWeight, coins.length * 3)
+    });
+  });
+
+  if (!sectorItems.length) return;
+
+  // Sort sectors by weight desc
+  sectorItems.sort(function(a,b){ return b.weight - a.weight; });
+
+  // Layout sector regions
+  squarify(sectorItems, 0, 0, 100, 100, true);
+
+  // Calculate total height needed: use aspect ratio to make height proportional to width
+  var containerEl = document.createElement('div');
+  containerEl.id = 'groupedTreemap';
+  // Height: make it tall enough to fit everything
+  var numCoins = sectorItems.reduce(function(s,si){ return s + si.coins.length; }, 0);
+
+// ↓ 여기만 바꾸면 됨
+var mapH = Math.max(320, Math.min(680, numCoins * 9));
+
+containerEl.style.height = mapH + 'px';
+
+  // Render each sector region
+  sectorItems.forEach(function(si) {
+    if (!si.rect) return;
+    var r = si.rect;
+    var sector = si.sector;
+    var coins = si.coins;
+
+    // Compute pixel dims (for font sizing logic)
+    var pxW = r.w / 100 * 900; // approx
+    var pxH = r.h / 100 * mapH;
+
+    var regionEl = document.createElement('div');
+    regionEl.className = 'sector-region';
+    regionEl.style.left   = r.x + '%';
+    regionEl.style.top    = r.y + '%';
+    regionEl.style.width  = r.w + '%';
+    regionEl.style.height = r.h + '%';
+    regionEl.style.border = '2px solid ' + sector.color + '55';
+    regionEl.style.background = sector.color + '08';
+
+    // Header height as % of this region's height
+    var headerPxH = 18;
+    var headerPct = (headerPxH / pxH * 100);
+
+    // Sector header
+    var avgRate = coins.reduce(function(s,c){ return s+(c.signed_change_rate||0); },0)/coins.length*100;
+    var avgCls  = avgRate >= 0 ? 'up' : 'down';
+
+    var header = document.createElement('div');
+    header.className = 'sector-region-header';
+    header.style.height = headerPxH + 'px';
+
+    var dot = document.createElement('span');
+    dot.className = 'sr-dot';
+    dot.style.background = sector.color;
+
+    var nameEl = document.createElement('span');
+    nameEl.className = 'sr-name';
+    nameEl.style.color = sector.color;
+    nameEl.textContent = sector.label;
+
+    var avgEl = document.createElement('span');
+    avgEl.className = 'sr-avg ' + avgCls;
+    avgEl.textContent = (avgRate>=0?'+':'') + avgRate.toFixed(1) + '%';
+
+    header.appendChild(dot);
+    header.appendChild(nameEl);
+    header.appendChild(avgEl);
+    regionEl.appendChild(header);
+
+    // Coin treemap inside region (below header)
+    var coinAreaTopPct = headerPct;
+    var coinAreaH = 100 - coinAreaTopPct;
+
+    // Build coin items
+    var coinItems = coins.map(function(t) {
+      var rate = t.signed_change_rate || 0;
+      return {
+        sym: t.sym,
+        kr:  t.korean_name,
+        rate: rate,
+        pct: (rate*100).toFixed(2),
+        sign: rate >= 0 ? '+' : '',
+        cls:  rate > 0 ? 'up' : (rate < 0 ? 'down' : 'flat'),
+        weight: Math.abs(rate)*100 + 0.5
+      };
+    });
+    coinItems.sort(function(a,b){ return b.weight - a.weight; });
+    squarify(coinItems, 0, 0, 100, 100, true);
+
+    coinItems.forEach(function(item) {
+      if (!item.rect) return;
+      var cr = item.rect;
+
+      // Map coin rect into coin area (below header)
+      var actualTop  = coinAreaTopPct + cr.y / 100 * coinAreaH;
+      var actualH    = cr.h / 100 * coinAreaH;
+
+      var block = document.createElement('div');
+      block.className = 'tm-block ' + item.cls;
+      block.style.left   = cr.x + '%';
+      block.style.top    = actualTop + '%';
+      block.style.width  = cr.w + '%';
+      block.style.height = actualH + '%';
+      block.title = item.kr + ' (' + item.sym + '): ' + item.sign + item.pct + '%';
+
+      // Font size based on block pixel size
+      var bpxW = cr.w / 100 * pxW;
+      var bpxH = actualH / 100 * pxH;
+      var fs = Math.min(bpxW / 5, bpxH / 3, 11);
+      fs = Math.max(fs, 6);
+      block.style.fontSize = fs + 'px';
+
+      var showKr  = bpxH > 26 && bpxW > 30;
+      var showPct = bpxH > 16 && bpxW > 18;
+      var showSym = bpxW > 12 && bpxH > 10;
+
+      if (showSym) {
+        block.innerHTML =
+          (showKr  ? '<span class="tb-kr">'  + item.kr   + '</span>' : '') +
+          '<span class="tb-sym">' + item.sym  + '</span>' +
+          (showPct ? '<span class="tb-pct">' + item.sign + item.pct + '%</span>' : '');
+      }
+
+      regionEl.appendChild(block);
+    });
+
+    containerEl.appendChild(regionEl);
+  });
+
+  container.appendChild(containerEl);
+}
+
+/* ──────────────────────────────────────
+   SINGLE SECTOR TREEMAP
+────────────────────────────────────── */
+function renderSingleSector(sectorId) {
+  var sector = SECTORS.find(function(s){ return s.id === sectorId; });
+  if (!sector || !sector.symbols) return;
+  var container = document.getElementById('marketContent');
+  container.innerHTML = '';
+
+  var coins = sector.symbols.map(function(sym){ return allTickers[sym]; }).filter(Boolean);
+  if (!coins.length) { container.innerHTML='<div class="no-data">업비트에 상장된 관련 코인 데이터가 없습니다.</div>'; return; }
+
+  var items = coins.map(function(t) {
+    var rate = t.signed_change_rate||0;
+    return { sym:t.sym, kr:t.korean_name, rate:rate, pct:(rate*100).toFixed(2), sign:rate>=0?'+':'', cls:rate>0?'up':(rate<0?'down':'flat'), weight:Math.abs(rate)*100+0.5 };
+  });
+  items.sort(function(a,b){ return b.weight-a.weight; });
+  squarify(items, 0, 0, 100, 100, true);
+
+  var tmH = Math.max(300, Math.min(600, items.length*26));
+  var tmWrap = document.createElement('div');
+  tmWrap.className = 'single-treemap';
+  tmWrap.style.height = tmH + 'px';
+
+  items.forEach(function(item) {
+    if (!item.rect) return;
+    var r = item.rect;
+    var div = document.createElement('div');
+    div.className = 'tm-block ' + item.cls;
+    div.style.left=r.x+'%'; div.style.top=r.y+'%'; div.style.width=r.w+'%'; div.style.height=r.h+'%';
+    div.title = item.kr+' ('+item.sym+'): '+item.sign+item.pct+'%';
+
+    var pxW = r.w/100*860, pxH = r.h/100*tmH;
+    var fs = Math.min(pxW/5, pxH/3.5, 13); fs = Math.max(fs, 6);
+    div.style.fontSize = fs+'px';
+
+    div.innerHTML =
+      (pxH>26&&pxW>34 ? '<span class="tb-kr">'+item.kr+'</span>' : '') +
+      '<span class="tb-sym">'+item.sym+'</span>' +
+      (pxH>16&&pxW>22 ? '<span class="tb-pct">'+item.sign+item.pct+'%</span>' : '');
+    tmWrap.appendChild(div);
+  });
+  container.appendChild(tmWrap);
+}
+
+/* ──────────────────────────────────────
+   SUMMARY & TABS
+────────────────────────────────────── */
+function updateSummary(sectorId) {
+  var summaryEl = document.getElementById('marketSummary');
+  var coins;
+  if (sectorId === '전체') { coins = Object.values(allTickers); }
+  else {
+    var s = SECTORS.find(function(x){ return x.id===sectorId; });
+    coins = (s&&s.symbols||[]).map(function(sym){ return allTickers[sym]; }).filter(Boolean);
+  }
+  if (!coins.length) { summaryEl.innerHTML=''; return; }
+  var upC = coins.filter(function(c){ return (c.signed_change_rate||0)>0; }).length;
+  var dnC = coins.filter(function(c){ return (c.signed_change_rate||0)<0; }).length;
+  var avg = coins.reduce(function(s,c){ return s+(c.signed_change_rate||0); },0)/coins.length*100;
+  summaryEl.innerHTML =
+    '<span class="ms-total">총 <b style="color:#e2e8f0">'+coins.length+'</b>개</span>'+
+    '<span class="ms-up">▲ '+upC+'</span><span class="ms-down">▼ '+dnC+'</span>'+
+    '<span>평균 <span class="ms-avg '+(avg>=0?'up':'down')+'">'+(avg>=0?'+':'')+avg.toFixed(2)+'%</span></span>';
+}
+
+function buildTabs() {
+  var tabsEl = document.getElementById('sectorTabs');
+  tabsEl.innerHTML = '';
+  SECTORS.forEach(function(s) {
+    var btn = document.createElement('button');
+    btn.className = 'stab' + (s.id===currentSector?' active':'');
+    btn.textContent = s.label;
+    btn.onclick = function() {
+      currentSector = s.id;
+      document.querySelectorAll('.stab').forEach(function(t){ t.classList.remove('active'); });
+      btn.classList.add('active');
+      updateSummary(s.id);
+      if (s.id==='전체') renderGroupedTreemap();
+      else renderSingleSector(s.id);
+    };
+    tabsEl.appendChild(btn);
+  });
+}
+
+/* ──────────────────────────────────────
+   LOAD MARKET DATA
+────────────────────────────────────── */
+function loadMarket() {
+  fetch('https://api.upbit.com/v1/market/all')
+    .then(function(r){ return r.json(); })
+    .then(function(markets) {
+      var krw = markets.filter(function(m){ return m.market && m.market.indexOf('KRW-')===0; });
+      var nameMap = {};
+      krw.forEach(function(m){ nameMap[m.market] = m.korean_name || m.market.replace('KRW-',''); });
+      var list = krw.map(function(m){ return m.market; });
+      var promises = [];
+      for (var i=0; i<list.length; i+=100) {
+        var part = list.slice(i,i+100).join(',');
+        promises.push(fetch('https://api.upbit.com/v1/ticker?markets='+part).then(function(r){ return r.json(); }));
+      }
+      return Promise.all(promises).then(function(res){ return {res:res,nameMap:nameMap}; });
+    })
+    .then(function(data) {
+      var tickers = [];
+      data.res.forEach(function(arr){ tickers.push.apply(tickers,arr); });
+      tickers.forEach(function(t) {
+        var sym = t.market.replace('KRW-','');
+        allTickers[sym] = Object.assign({},t,{sym:sym,korean_name:data.nameMap[t.market]||sym});
+      });
+      document.getElementById('marketLoading').style.display='none';
+      document.getElementById('marketBody').style.display='block';
+      buildTabs();
+      updateSummary('전체');
+      renderGroupedTreemap();
+    })
+    .catch(function(){ document.getElementById('marketLoading').textContent='코인 시세를 불러오지 못했습니다.'; });
+}
+
+/* ──────────────────────────────────────
+   BTC CHART
+────────────────────────────────────── */
+function formatPrice(n){ return new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}).format(n)+' 원'; }
+function formatUsd(n){ if(n==null||isNaN(n))return''; return '약 $'+new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(n); }
+
+function analyzeTrend(prices){
+  var len=prices.length,r7=prices.slice(-7),old=prices.slice(0,Math.floor(len/2));
+  var rA=r7.reduce(function(a,b){return a+b;},0)/r7.length;
+  var oA=old.reduce(function(a,b){return a+b;},0)/old.length;
+  var cur=prices[len-1],mn=Math.min.apply(null,prices),mx=Math.max.apply(null,prices);
+  var rng=mx-mn,fL=((cur-mn)/rng)*100,fH=((mx-cur)/mx)*100;
+  var tU=rA>oA,mom=(cur-prices[len-5])/prices[len-5];
+  var v,t,tx;
+  if(tU&&fL<40&&mom>0){v='buy';t='매수 참고 가능';tx='최근 30일 구간에서 상승 추세가 이어지고, 현재가가 30일 최저 대비 낮은 편입니다. 단기 모멘텀도 양수라 참고용으로 매수 검토해볼 수 있습니다. 변동성이 크므로 분할 매수·손절선 설정을 권장합니다.';}
+  else if(!tU&&fH<20){v='avoid';t='당분간 매수 보류 추천';tx='30일 구간에서 하락/횡보 추세가 보이고, 현재가가 30일 최고가에 가깝습니다. 고점 근처에서 매수하기보다는 조정이 나온 뒤 다시 추세를 확인하는 편이 안전합니다.';}
+  else if(fL>70){v='avoid';t='고점 근처 · 매수 보류';tx='현재가가 30일 구간에서 상대적으로 높은 위치에 있습니다. 단기 과열일 수 있으니 추가 상승 확인 전까지는 신규 매수보다 관망을 추천합니다.';}
+  else{v='neutral';t='관망 추천';tx='추세가 뚜렷하지 않거나 중간 구간입니다. 추가 신호(거래량, 뉴스 등)를 보시고 분할 매수나 대기 중 하나를 선택하시면 됩니다.';}
+  return{verdict:v,title:t,text:tx,current:cur,min30:mn,max30:mx,changePct:((cur-prices[0])/prices[0])*100};
+}
+
+function predictFuture(prices){
+  var len=prices.length,cur=prices[len-1],mn=Math.min.apply(null,prices);
+  var lk=Math.min(14,len-1),rc=prices.slice(-lk-1);
+  var sx=0,sy=0,sxy=0,sx2=0;
+  for(var i=0;i<rc.length;i++){sx+=i;sy+=rc[i];sxy+=i*rc[i];sx2+=i*i;}
+  var n=rc.length,sl=(n*sxy-sx*sy)/(n*sx2-sx*sx),dcp=sl/cur;
+  var dr=[];for(var j=1;j<rc.length;j++)dr.push((rc[j]-rc[j-1])/rc[j-1]);
+  var ar=dr.reduce(function(a,b){return a+b;},0)/dr.length;
+  var vr=dr.reduce(function(a,r){return a+(r-ar)*(r-ar);},0)/dr.length;
+  var vol=Math.sqrt(vr)||0.02;
+  var p7=cur+sl*7,p14=cur+sl*14,r7=cur*vol*Math.sqrt(7)*1.5,r14=cur*vol*Math.sqrt(14)*1.5;
+  var dir='횡보',dcl='';
+  if(dcp>0.002){dir='상승 가능성';dcl='up';}else if(dcp<-0.002){dir='하락 가능성';dcl='down';}
+  var nar='';
+  if(dcp>0.003)nar='최근 '+lk+'일 추세선이 위를 향하고 있어, 단기적으로는 현재 추세가 이어질 가능성이 있습니다.';
+  else if(dcp<-0.003)nar='최근 '+lk+'일 추세가 하락 쏠림이라, 당분간 조정이 이어질 수 있습니다.';
+  else nar='최근 추세가 뚜렷하지 않아 단기 전망은 횡보에 가깝습니다.';
+  var wc=Math.round(cur-cur*vol*2.5*Math.sqrt(14));if(wc<mn)wc=Math.round(mn*0.98);
+  var up='낮음',dn='낮음';
+  if(dcp>0.004){up='보통~높음';dn='낮음';}else if(dcp>0.001){up='보통';dn='보통';}else if(dcp<-0.004){up='낮음';dn='보통~높음';}else if(dcp<-0.001){up='보통';dn='보통';}
+  return{pred7Low:Math.round(p7-r7),pred7High:Math.round(p7+r7),pred14Low:Math.round(p14-r14),pred14High:Math.round(p14+r14),direction:dir,directionClass:dcl,narrative:nar,worstCase:wc,upPossibility:up,downPossibility:dn};
+}
+
+function showError(msg){
+  document.getElementById('loading').style.display='none';
+  document.getElementById('content').style.display='none';
+  var e=document.getElementById('error');e.style.display='block';e.textContent=msg;
+}
+
+function initBtcChart(){
+  Promise.all([
+    fetch('https://api.upbit.com/v1/candles/days?market=KRW-BTC&count=30'),
+    fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,krw')
+  ])
+  .then(function(res){ return Promise.all([res[0].json(),res[1].json()]); })
+  .then(function(arr){
+    var candles=arr[0],rd=arr[1];
+    if(!candles||!candles.length){showError('가격 데이터를 불러올 수 없습니다.');return;}
+    var bu=rd.bitcoin&&rd.bitcoin.usd?rd.bitcoin.usd:0,bk=rd.bitcoin&&rd.bitcoin.krw?rd.bitcoin.krw:0;
+    function toUsd(krw){if(!bu||!bk)return null;return Math.round(krw*bu/bk);}
+    var rev=candles.slice().reverse();
+    var prices=rev.map(function(c){return c.trade_price;});
+    var labels=rev.map(function(c){
+      var d=c.candle_date_time_kst||c.candle_date_time_utc||'';
+      if(d){var m=d.match(/(\d{4})-(\d{2})-(\d{2})/);if(m)return m[2]+'/'+m[3];}
+      return d?d.slice(0,10):'';
+    });
+    var res2=analyzeTrend(prices),pred=predictFuture(prices);
+    document.getElementById('loading').style.display='none';
+    document.getElementById('content').style.display='block';
+    document.getElementById('priceNow').textContent=formatPrice(res2.current);
+    document.getElementById('priceNow').className='price-now '+(res2.changePct>=0?'up':'down');
+    document.getElementById('priceNowUsd').textContent=toUsd(res2.current)!=null?formatUsd(toUsd(res2.current)):'';
+    document.getElementById('priceChange').textContent='30일 전 대비 '+(res2.changePct>=0?'+':'')+res2.changePct.toFixed(2)+'%';
+    document.getElementById('statHigh').textContent=formatPrice(res2.max30);
+    document.getElementById('statLow').textContent=formatPrice(res2.min30);
+    document.getElementById('statHighUsd').textContent=toUsd(res2.max30)!=null?formatUsd(toUsd(res2.max30)):'';
+    document.getElementById('statLowUsd').textContent=toUsd(res2.min30)!=null?formatUsd(toUsd(res2.min30)):'';
+    document.getElementById('predCurrent').textContent=formatPrice(res2.current)+(toUsd(res2.current)!=null?' ('+formatUsd(toUsd(res2.current))+')':'');
+    document.getElementById('pred7').textContent=formatPrice(pred.pred7Low)+' ~ '+formatPrice(pred.pred7High);
+    document.getElementById('pred14').textContent=formatPrice(pred.pred14Low)+' ~ '+formatPrice(pred.pred14High);
+    document.getElementById('predWorst').textContent=formatPrice(pred.worstCase);
+    document.getElementById('upPossibility').textContent=pred.upPossibility;
+    document.getElementById('downPossibility').textContent=pred.downPossibility;
+    document.getElementById('worstCase').textContent=formatPrice(pred.worstCase);
+    var de=document.getElementById('predDirection');de.textContent=pred.direction;de.className=pred.directionClass;
+    document.getElementById('predNarrative').textContent=pred.narrative;
+    var ve=document.getElementById('verdict');ve.className='verdict '+res2.verdict;
+    document.getElementById('verdictTitle').textContent=res2.title;
+    document.getElementById('verdictText').textContent=res2.text;
+    var n=prices.length;
+    new Chart(document.getElementById('chart'),{
+      type:'line',
+      data:{labels:labels,datasets:[
+        {label:'BTC/KRW',data:prices,borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.1)',fill:true,tension:0.3},
+        {label:'현재가',data:Array(n).fill(res2.current),borderColor:'rgba(34,197,94,0.8)',borderDash:[4,4],fill:false,pointRadius:0},
+        {label:'30일 최고',data:Array(n).fill(res2.max30),borderColor:'rgba(239,68,68,0.6)',borderDash:[2,2],fill:false,pointRadius:0},
+        {label:'30일 최저',data:Array(n).fill(res2.min30),borderColor:'rgba(59,130,246,0.6)',borderDash:[2,2],fill:false,pointRadius:0}
+      ]},
+      options:{
+        responsive:true,maintainAspectRatio:true,
+        plugins:{legend:{display:true,position:'top',labels:{color:'#94a3b8',boxWidth:12}}},
+        scales:{
+          x:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#94a3b8',maxTicksLimit:10}},
+          y:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#94a3b8',callback:function(v){return(v/1000000).toFixed(1)+'M';}}}
+        }
+      }
+    });
+  })
+  .catch(function(){showError('네트워크 오류입니다. 잠시 후 다시 시도해 주세요.');});
+}
+
+initBtcChart();
+loadMarket();
+
+})();
+</script>
+</body>
+</html>

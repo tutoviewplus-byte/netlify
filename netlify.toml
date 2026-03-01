@@ -1,0 +1,12 @@
+[functions]
+directory = "netlify/functions"
+
+[[redirects]]
+from = "/api/upbit/market/all"
+to   = "/.netlify/functions/upbitMarketAll"
+status = 200
+
+[[redirects]]
+from = "/api/upbit/ticker"
+to   = "/.netlify/functions/upbitTicker"
+status = 200
